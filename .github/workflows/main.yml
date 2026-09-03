@@ -8,33 +8,80 @@ on:
 
 jobs:
   build:
+    name: Build Android APK
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Find and extract Android project
+      - name: Check repository contents
         run: |
-          ZIP_FILE=$(find . -maxdepth 1 -name "*.zip" | head -n 1)
-          echo "ZIP found: $ZIP_FILE"
+          echo "=== Repository contents ==="
+          ls -la
+          echo "=== ZIP files ==="
+          find . -maxdepth 2 -type f -name "*.zip" -print
+
+      - name: Extract Android project
+        run: |
+          mkdir -p extracted
+
+          ZIP_FILE=$(find . -maxdepth 2 -type f -name "*.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: No ZIP file found."
+            exit 1
+          fi
+
+          echo "ZIP file found: $ZIP_FILE"
           unzip -o "$ZIP_FILE" -d extracted
 
-      - name: Find Gradle project
+          echo "=== Extracted project ==="
+          find extracted -maxdepth 4 -type f | head -200
+
+      - name: Locate Gradle project
         run: |
-          echo "Searching for Gradle project..."
-          find extracted -name "settings.gradle" -o -name "settings.gradle.kts"
+          echo "=== Searching for Gradle wrapper ==="
+          find extracted -type f -name "gradlew" -print
+
+          echo "=== Searching for settings.gradle ==="
+          find extracted -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) -print
 
       - name: Build APK
         run: |
-          PROJECT_DIR=$(dirname "$(find extracted -name "settings.gradle" -o -name "settings.gradle.kts" | head -n 1)")
+          GRADLEW=$(find extracted -type f -name "gradlew" | head -n 1)
+
+          if [ -z "$GRADLEW" ]; then
+            echo "ERROR: gradlew was not found."
+            echo "The ZIP may not contain the complete Android project."
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$GRADLEW")
+
+          echo "Gradle wrapper: $GRADLEW"
           echo "Project directory: $PROJECT_DIR"
+
           cd "$PROJECT_DIR"
+
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+
+          echo "=== Gradle version ==="
+          ./gradlew --version
+
+          echo "=== Starting Android build ==="
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Find generated APK
+        if: success()
+        run: |
+          echo "=== Searching for APK ==="
+          find extracted -type f -name "*.apk" -print
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: Stock-Tracker-debug-apk
-          path: "**/build/outputs/apk/**/*.apk"
+          path: "extracted/**/build/outputs/apk/**/*.apk"
+          if-no-files-found: error
