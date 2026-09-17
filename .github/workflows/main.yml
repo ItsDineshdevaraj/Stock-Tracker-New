@@ -15,73 +15,43 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Check repository contents
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Check project structure
         run: |
-          echo "=== Repository contents ==="
+          echo "=== Repository root ==="
           ls -la
-          echo "=== ZIP files ==="
-          find . -maxdepth 2 -type f -name "*.zip" -print
+          echo "=== Android project files ==="
+          find . -maxdepth 3 -type f \
+            \( -name "build.gradle" -o -name "build.gradle.kts" -o -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            -print
 
-      - name: Extract Android project
+      - name: Build Debug APK
         run: |
-          mkdir -p extracted
-
-          ZIP_FILE=$(find . -maxdepth 2 -type f -name "*.zip" | head -n 1)
-
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: No ZIP file found."
-            exit 1
-          fi
-
-          echo "ZIP file found: $ZIP_FILE"
-          unzip -o "$ZIP_FILE" -d extracted
-
-          echo "=== Extracted project ==="
-          find extracted -maxdepth 4 -type f | head -200
-
-      - name: Locate Gradle project
-        run: |
-          echo "=== Searching for Gradle wrapper ==="
-          find extracted -type f -name "gradlew" -print
-
-          echo "=== Searching for settings.gradle ==="
-          find extracted -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) -print
-
-      - name: Build APK
-        run: |
-          GRADLEW=$(find extracted -type f -name "gradlew" | head -n 1)
-
-          if [ -z "$GRADLEW" ]; then
-            echo "ERROR: gradlew was not found."
-            echo "The ZIP may not contain the complete Android project."
-            exit 1
-          fi
-
-          PROJECT_DIR=$(dirname "$GRADLEW")
-
-          echo "Gradle wrapper: $GRADLEW"
-          echo "Project directory: $PROJECT_DIR"
-
-          cd "$PROJECT_DIR"
-
-          chmod +x gradlew
-
-          echo "=== Gradle version ==="
-          ./gradlew --version
-
-          echo "=== Starting Android build ==="
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          gradle assembleDebug --no-daemon --stacktrace
 
       - name: Find generated APK
         if: success()
         run: |
-          echo "=== Searching for APK ==="
-          find extracted -type f -name "*.apk" -print
+          echo "=== Generated APK files ==="
+          find . -type f -name "*.apk" -print
 
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: Stock-Tracker-debug-apk
-          path: "extracted/**/build/outputs/apk/**/*.apk"
+          path: "**/build/outputs/apk/**/*.apk"
           if-no-files-found: error
